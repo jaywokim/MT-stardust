@@ -404,11 +404,15 @@ Please note that this causes MicrobeTrace to store data on your computer's hard 
         reader.readAsText(rawfile, 'UTF-8');
         return;
       }
-      fileto.promise(rawfile, (extension == 'xlsx' || extension == 'xls') ? 'ArrayBuffer' : 'Text').then(file => {
-        file.name = filterXSS(file.name);
-        file.extension = file.name.split('.').pop().toLowerCase();
-        session.files.push(file);
-        addToTable(file);
+      return new Promise(resolve => {
+        fileto.promise(rawfile, (extension == 'xlsx' || extension == 'xls') ? 'ArrayBuffer' : 'Text').then(file => {
+          file.name = filterXSS(file.name);
+          file.extension = file.name.split('.').pop().toLowerCase();
+          session.files.push(file);
+          console.log('push to session file')
+          addToTable(file);
+        });
+        resolve('resolved');
       });
     }
 
@@ -1187,5 +1191,68 @@ Please note that this causes MicrobeTrace to store data on your computer's hard 
         MT.runHamsters();
       };
     };
+
+
+    hantaNet = () => {
+      return new Promise(function(resolve, reject) {
+        var rawFile = new XMLHttpRequest();
+        rawFile.open("GET", "../demo/Demo_outbreak_NodeList.csv", true);
+        rawFile.onreadystatechange = async function () {
+          if (rawFile.readyState === 4) {
+            if(rawFile.status === 200 || rawFile.status == 0) {
+              var allText = rawFile.responseText;
+              await processFile(new File([allText], 'sample_NodeList.csv'));
+                
+              resolve('done!!');  
+            }
+          }
+        }
+        rawFile.send(null);
+        
+      })
+    };
+
+    loadHantaNet = async () => {
+      let x =  await hantaNet();
+      console.log( x);
+      setTimeout(() => { 
+        launch(); 
+      }, 100);
+
+      setTimeout(() => { 
+        MT.loadLayout({"type":"row","content":[{"type":"stack","content":[{"type":"2d_network"}]},{"type":"stack","content":[{"type":"histogram"}]}]});
+        // {"type":"row","content":[{"type":"stack","content":[{"type":"2d_network"}]},{"type":"stack","content":[{"type":"histogram"}]}]}
+      }, 1500);
+    } 
+    
+    loadHantaNet();
+    
+    // MT.loadLayout({
+    //     "type": "column",
+    //     "content": [
+    //       {
+    //         "type": "row",
+    //         "content": [
+    //           {
+    //             "type": "stack",
+    //             "content": [{"type": "geo_map"}]
+    //           },
+    //           {
+    //             "type": "stack",
+    //             "content": [{"type": "phylogenetic_tree"}]
+    //           }
+    //         ]
+    //       },
+    //       {
+    //         "type": "stack",
+    //         "content": [{"type": "timeline"}]
+    //       }
+    //     ]
+    //   }
+    // )
+    
+
+
+
   })();
 </script>
