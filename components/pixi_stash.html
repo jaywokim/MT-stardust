@@ -1,0 +1,329 @@
+<div id="pixi"></div>
+
+
+
+
+<script type="text/javascript">
+  (() => {
+   
+
+    let halfWidth = $('#pixi').parent().width() / 2;
+    let halfHeight = $('#pixi').parent().parent().parent().height() / 2;
+    let settings = session.style.widgets;
+
+    
+
+    let stage = new PIXI.Stage();
+    let renderer = PIXI.autoDetectRenderer(halfWidth * 2, halfHeight * 2,
+        {antialias: !0, transparent: !0, resolution: 1});
+
+    if (renderer instanceof PIXI.CanvasRenderer) {    
+      //canvas renderer
+      console.log('canvas renderer')
+    } else {    
+      //webgl renderer
+      console.log('webgl renderer')
+    }
+
+
+    document.getElementById('pixi').appendChild(renderer.view);
+    // document.body.appendChild(renderer.view);
+
+   
+    console.log('settings[link-length]', settings['link-length']);
+
+    console.log('settings[node-charge]', settings['node-charge']);
+
+    console.log('settings[network-gravity]', settings['network-gravity']);
+
+
+    
+    let simulation = d3.forceSimulation()
+      .force('link', d3.forceLink()
+        .id(d => d._id)
+        .distance(l => l.origin.length * settings['link-length'])
+        .strength(0.125)
+      )
+      // .force('link', d3.forceLink().id((d) => d._id))
+      .force('charge', d3.forceManyBody()
+        .strength(-settings['node-charge'])
+      )
+      // .force('charge', d3.forceManyBody())
+      .force('gravity', d3.forceAttract()
+        .target([halfWidth, halfHeight])
+        .strength(settings['network-gravity'])
+      )
+      .force('center', d3.forceCenter(halfWidth, halfHeight));
+     
+      
+
+    let render = () => {
+      console.log('render')
+
+      const start = Date.now();
+      let newNodes = MT.getVisibleNodes(true);
+      let oldNodes = session.network.nodes;
+
+      newNodes.forEach((d, i) => {
+        let match = oldNodes.find(d2 => d2._id == d._id);
+        if (match) {
+          ['x', 'y', 'fx', 'fy', 'vx', 'vy', 'fixed'].forEach(v => {
+            if (typeof match[v] != "undefined") d[v] = match[v];
+          });
+        }
+      });
+
+      // parseInt(str.replace(/^#/, ''), 16)
+
+      session.network.nodes = newNodes;
+
+      let links = new PIXI.Graphics();
+      stage.addChild(links);
+
+      let variable = settings['node-color-variable'];
+
+      let defaultSize = settings['node-radius'];
+      let size = defaultSize, med = defaultSize, oldrng, min, max;
+      console.log('size node', size);
+
+      // updateNodeColors();
+      newNodes.forEach((node) => {
+
+        node.gfx = new PIXI.Graphics();
+        node.gfx.lineStyle(1.5, 0xFFFFFF);
+        
+        if (variable == 'None') {
+          let fill = settings['node-color'];
+          // nodes.attr('fill', col).attr('opacity', 1);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), 1);
+        } else {
+          
+          let fill = temp.style.nodeColorMap(node[variable]);
+
+          console.log('fill', fill);
+          let alpha = temp.style.nodeAlphaMap(node[variable]);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), parseInt(alpha));
+        
+        }
+        // node.gfx.endFill();
+        // node.gfx.beginFill(parseInt(settings['node-color'].replace(/^#/, ''), 16));
+        node.gfx.drawCircle(0, 0, 5);
+
+        node.gfx.interactive = true;
+        
+        stage.addChild(node.gfx);
+      });
+
+      d3.select(renderer.view)
+        .call(d3.drag()
+          .container(renderer.view)
+          .subject(() => simulation.find(d3.event.x, d3.event.y))
+          .on('start', dragstarted)
+          .on('drag', dragged)
+          .on('end', dragended));
+      
+      let vlinks = getVLinks();
+
+      // console.log('vlinks', vlinks);
+
+      // console.log('pixi',newNodes);
+
+      simulation
+        .nodes(newNodes)
+        .on('tick', ticked);
+
+      simulation.force('link')
+        .links(vlinks);
+
+      function ticked() {
+
+        newNodes.forEach((node) => {
+            let { x, y, gfx } = node;
+            gfx.position = new PIXI.Point(x, y);
+        });
+
+        links.clear();
+        links.alpha = 0.6;
+
+        vlinks.forEach((link) => {
+            let { source, target } = link;
+            links.lineStyle(2, parseInt('#D3D3D3'.replace(/^#/, ''), 16), 1);
+            links.moveTo(source.x, source.y);
+            links.lineTo(target.x, target.y);
+        });
+
+        links.endFill();
+
+        renderer.render(stage);
+
+      }
+
+
+    }
+
+    function dragstarted() {
+        if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+        d3.event.subject.fx = d3.event.subject.x;
+        d3.event.subject.fy = d3.event.subject.y;
+    }
+
+    function dragged() {
+        d3.event.subject.fx = d3.event.x;
+        d3.event.subject.fy = d3.event.y;
+    }
+
+    function dragended() {
+        if (!d3.event.active) simulation.alphaTarget(0);
+        d3.event.subject.fx = null;
+        d3.event.subject.fy = null;
+    }
+    
+
+    function updateNodeColors() {
+      let variable = settings['node-color-variable'];
+      session.network.nodes.forEach((node) => {
+        node.gfx.clear();
+        if (variable == 'None') {
+            let fill = settings['node-color'];
+            // nodes.attr('fill', col).attr('opacity', 1);
+            node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), 1);
+        } else {
+          
+          let fill = temp.style.nodeColorMap(node[variable]);
+          let alpha = temp.style.nodeAlphaMap(node[variable]);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), parseInt(alpha));
+        
+        }
+        node.gfx.drawCircle(0, 0, 5);
+        renderer.render(stage);
+
+      });
+    }
+
+
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(stage);
+    }
+
+    stage.interactive = true;
+
+    // stage.interactionManager.onMouseUp = function(e){
+    //     mousedown = false;
+    // };
+
+
+    // stage.hitArea = new PIXI.Rectangle( 0, 0, 100000, 100000 );
+    // stage
+    //   .on('mousedown', down)
+    //   .on('touchstart', down)
+    //   .on('mouseup', up)
+    //   .on('mousemove', move)
+    //   .on('mouseupoutside', up)
+    //   .on('touchend', up)
+    //   .on('touchendoutside', up);
+    // animate();
+    // function animate() {
+    //     requestAnimationFrame(animate);
+    //     renderer.render(stage);
+    // }
+    // function down(e) { 
+    //   console.log(e); 
+    //   lastPos = {x:e.offsetX,y:e.offsetY};
+    //   console.log(lastPos); 
+    // }
+    // function up(e) { 
+    //   console.log(e); 
+    //   lastPos = null;
+    // }
+    // function move(e) {  
+    //   if(lastPos) {
+    //     console.log(e.offsetX-lastPos.x)
+    //     stage.x += (e.offsetX-lastPos.x);
+    //     stage.y += (e.offsetY-lastPos.y);  
+    //     lastPos = {x:e.offsetX,y:e.offsetY};
+    //   }
+    // }
+
+    function zoom(s,x,y){
+      s = s > 0 ? 2 : 0.5;
+      
+      var worldPos = {x: (x - stage.x) / stage.scale.x, y: (y - stage.y)/stage.scale.y};
+      var newScale = {x: stage.scale.x * s, y: stage.scale.y * s};
+      
+      var newScreenPos = {x: (worldPos.x ) * newScale.x + stage.x, y: (worldPos.y) * newScale.y + stage.y};
+
+      stage.x -= (newScreenPos.x-x) ;
+      stage.y -= (newScreenPos.y-y) ;
+      stage.scale.x = newScale.x;
+      stage.scale.y = newScale.y;
+     
+    };
+
+    var canvas = document.getElementById('pixi');
+    var lastPos = null
+    $(canvas)
+      .mousewheel(function(e){
+        zoom(e.deltaY, e.offsetX, e.offsetY)
+      }).mousedown(function(e) {
+        lastPos = {x:e.offsetX,y:e.offsetY};
+      }).mouseup(function(event) {
+        lastPos = null;
+      }).mousemove(function(e){
+        if(lastPos) {
+          stage.x += (e.offsetX-lastPos.x);
+          stage.y += (e.offsetY-lastPos.y);  
+          lastPos = {x:e.offsetX,y:e.offsetY};
+        }
+        
+      });  
+
+
+
+    function getVLinks() {
+      let vlinks = MT.getVisibleLinks(true);
+      let output = [];
+      let n = vlinks.length;
+      let nodes = session.network.nodes;
+      for (let i = 0; i < n; i++) {
+        if (vlinks[i].origin) {
+          if (typeof vlinks[i].origin == 'object') {
+            vlinks[i].origin.forEach((o, j, l) => {
+              output.push(Object.assign({}, vlinks[i], {
+                origin: o,
+                oNum: j,
+                origins: l.length,
+                source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+                target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+              }));
+            });
+          } else {
+            output.push(Object.assign({}, vlinks[i], {
+              oNum: 0,
+              origins: 1,
+              source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+              target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+            }));
+          }
+        } else {
+          output.push(Object.assign({}, vlinks[i], {
+            origin: 'Unknown',
+            oNum: 0,
+            origins: 1,
+            source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+            target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+          }));
+        }
+      }
+      return output;
+    }
+
+    render();
+
+    $window
+      .on('node-color-change', updateNodeColors)
+      .on('link-color-change', render);
+
+  })();
+</script>

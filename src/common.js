@@ -67,7 +67,7 @@
     "choropleth-satellite-show": false,
     "choropleth-transparency": 0.3,
     "cluster-minimum-size": 1,
-    "default-view": "2d_network",
+    "default-view": "stardust",
     "filtering-epsilon": -8,
     "flow-showNodes": "selected",
     "globe-countries-show": false,
@@ -1078,8 +1078,8 @@
   MT.runHamsters = async () => {
     if (!session.style.widgets['triangulate-false']) await MT.computeTriangulation();
     // MT.computeNN();
-    MT.computeMST();
-    await MT.computeTree();
+    // MT.computeMST();
+    // await MT.computeTree();
     if(!session.style.widgets['infer-directionality-false']) MT.computeDirectionality();
     MT.finishUp();
   };
@@ -1558,6 +1558,7 @@
         temp.componentCache[view] = response;
         //This MUST NOT be replace by an arrow function!
         layout.registerComponent(view, function (container, state) {
+          console.log('registerComponent', view, state)
           container.getElement().html(state.text);
         });
         if (callback) {
@@ -1576,6 +1577,8 @@
         }
         let lastStack = peek(layout.root.contentItems[0].getItemsByType("stack"));
         if (!lastStack) lastStack = layout.root.contentItems[0];
+        console.log('view', view)
+        console.log(MT.titleize(view));
         lastStack.addChild({
           componentName: view,
           componentState: { text: temp.componentCache[view] },
@@ -1649,6 +1652,7 @@
   };
   
   MT.loadLayout = (component, parent) => {
+    console.log('loadLayout')
     if (!parent) {
       parent = layout.root;
       try {

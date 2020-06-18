@@ -1,0 +1,315 @@
+<canvas id="stardust"></canvas>
+<div class="fps"></div>
+
+<script type="text/javascript">
+(() => {
+
+function jsonCopy(src) {
+  return JSON.parse(JSON.stringify(src));
+}
+
+function FPS() {
+    this.updates = [];
+    this.updateIndex = 0;
+}
+
+FPS.prototype.update = function() {
+    this.updateIndex += 1;
+    this.updates.push(new Date().getTime());
+    if(this.updates.length > 100) {
+        this.updates.splice(0, this.updates.length - 100);
+    }
+    if(this.updateIndex % 20 == 0) {
+        var dt = (this.updates[this.updates.length - 1] - this.updates[0]) / (this.updates.length - 1);
+        d3.select(".fps").text("FPS: " + (1000 / dt).toFixed(1));
+    }
+}
+
+let hexToRgb = hex =>
+    hex.replace(/^#?([a-f\d])([a-f\d])([a-f\d])$/i
+             ,(m, r, g, b) => '#' + r + r + g + g + b + b)
+    .substring(1).match(/.{2}/g)
+    .map(x => parseInt(x, 16))
+
+let halfWidth = $('#network').parent().width() / 2
+let halfHeight = $('#network').parent().parent().parent().height() / 2
+let settings = session.style.widgets
+
+
+  // Get our canvas element
+  var canvas = document.getElementById("stardust");
+  var width = 960;
+  var height = 500;
+
+  // Create a WebGL 2D platform on the canvas:
+  var platform = Stardust.platform("webgl-2d", canvas, halfWidth * 2, halfHeight * 2);
+  platform.pixelRatio = window.devicePixelRatio || 1;
+
+  var snodes = Stardust.mark.create(Stardust.mark.circle(8), platform);
+  var snodesBG = Stardust.mark.create(Stardust.mark.circle(8), platform);
+  var snodesSelected = Stardust.mark.create(Stardust.mark.circle(8), platform);
+  var sedges = Stardust.mark.create(Stardust.mark.line(), platform);
+
+  
+  
+
+
+  // let newNodes = MT.getVisibleNodes(true);
+
+  // let nodes = jsonCopy(newNodes);
+  
+  // var N = nodes.length;
+
+  // for (var i = 0; i < N; i++) {
+  //   nodes[i].index = i;
+  //   nodes[i].x = Math.random() * width;
+  //   nodes[i].y = Math.random() * height;
+  // }
+
+  
+  
+  let newNodes = MT.getVisibleNodes(true);
+  let oldNodes = session.network.nodes;
+  console.log('newNodes',newNodes);
+  newNodes.forEach((d, i) => {
+    let match = oldNodes.find(d2 => d2._id == d._id);
+    if (match) {
+      ['x', 'y', 'fx', 'fy', 'vx', 'vy', 'fixed'].forEach(v => {
+        if (typeof match[v] != "undefined") d[v] = match[v];
+      });
+    }
+  });
+
+  session.network.nodes = newNodes;
+
+  let nodes = newNodes;
+
+  console.log('!!nodes',nodes);
+
+  let vlinks = getVLinks();
+  console.log('vlinks', vlinks)
+
+  let variable = settings['node-color'];
+  let fill = hexToRgb(variable);
+  fill = fill.map(x => x / 255);
+  fill[3] = 1;
+  console.log('fill', fill )
+
+
+
+
+  snodes
+    .attr("radius", 2)
+    .attr("color", d => fill);
+
+
+  sedges
+    .attr("width", 2)
+    .attr("color", d => {
+      // if (d.source.cluster == d.target.cluster) return colors[d.source.cluster].slice(0, 3).concat([0.1]);
+      return [0.5, 0.5, 0.5, 0.1]
+    });
+
+
+  console.log('stage 1' )
+
+
+  let force = d3.forceSimulation()
+  .force('link', d3.forceLink()
+        .id(d => d._id)
+        .distance(l => l.origin.length * settings['link-length'])
+        .strength(0.125)
+      )
+  .force('charge', d3.forceManyBody()
+    .strength(-settings['node-charge'])
+  )
+  .force('gravity', d3.forceAttract()
+    .target([halfWidth, halfHeight])
+    .strength(settings['network-gravity'])
+  )
+  .force('center', d3.forceCenter(halfWidth, halfHeight));
+  // .force("link", d3.forceLink().id(function (d) { return d.index }))
+  // .force("charge", d3.forceManyBody())
+  // .force("forceX", d3.forceX(width / 2))
+  // .force("forceY", d3.forceY(height / 2))
+  
+  console.log('stage 2' )
+
+  force.nodes(nodes);
+  force.force("link").links(vlinks);
+  force.alpha(0.3).alphaTarget(0).restart();
+
+  var positions = Stardust.array("Vector2")
+    .value(d => [d.x, d.y])
+    .data(nodes);
+
+  var positionScale = Stardust.scale.custom("array(pos, value)")
+    .attr("pos", "Vector2Array", positions)
+
+  snodes.attr("center", positionScale(d => d.index));
+
+  sedges.attr("p1", positionScale(d => d.source.index));
+  sedges.attr("p2", positionScale(d => d.target.index));
+
+  snodes.data(nodes);
+  sedges.data(vlinks);
+
+  console.log('stage 3' )
+
+  
+function start() {
+  const start = Date.now();
+  force.on("tick", () => {
+    positions.data(nodes);
+    requestRender();
+  });
+  console.log("Stardust render time:", (Date.now() - start).toLocaleString(), 'ms');
+}
+  
+
+  console.log('stage 4' )
+
+  let selectedNode = null;
+
+  var requested = null;
+
+  function requestRender() {
+    
+    if (requested) return;
+    requested = requestAnimationFrame(render);
+  }
+
+  console.log('stage 5' )
+  var fps = new FPS();
+
+  var zoom_scale = 1.0, zoom_t_x = 0.0, zoom_t_y = 0.0;
+
+  d3.select('canvas#stardust').call(d3.zoom().on("zoom", zoomed));
+  function zoomed() {
+      zoom_scale = d3.event.transform.k;
+      zoom_t_x = d3.event.transform.x;
+      zoom_t_y = d3.event.transform.y;
+      requestRender();
+  }
+
+
+  function render() {
+    positions.value(d => [d.x*zoom_scale + zoom_t_x, d.y*zoom_scale + zoom_t_y]);
+    requested = null;
+    snodesSelected.data(selectedNode ? [selectedNode] : []);
+
+    // Cleanup and re-render.
+    platform.clear([1, 1, 1, 1]);
+    sedges.render();
+    // snodesBG.render();
+    snodes.attr("radius", 5);
+    snodes.render();
+
+    // snodesSelected.render();
+
+    // Render the picking buffer.
+    platform.beginPicking(canvas.width, canvas.height);
+    snodes.attr("radius", 7); // make radius larger so it's easier to select.
+    snodes.render();
+    platform.endPicking();
+
+    fps.update();
+   
+  }
+
+  var isDragging = false;
+  var draggingLocation = null;
+  // Handle dragging.
+  canvas.onmousedown = function (e) {
+      var x = e.clientX - canvas.getBoundingClientRect().left;
+      var y = e.clientY - canvas.getBoundingClientRect().top;
+      var p = platform.getPickingPixel(x * platform.pixelRatio, y * platform.pixelRatio);
+      if (p) {
+          selectedNode = nodes[p[1]];
+          requestRender();
+          isDragging = true;
+          draggingLocation = [selectedNode.x, selectedNode.y];
+          var onMove = function (e) {
+              var nx = e.clientX - canvas.getBoundingClientRect().left;
+              var ny = e.clientY - canvas.getBoundingClientRect().top;
+              selectedNode.x = nx;
+              selectedNode.y = ny;
+              draggingLocation = [nx, ny];
+              force.alphaTarget(0.3).alphaTarget(0).restart();
+              requestRender();
+          };
+          var onUp = function () {
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+              selectedNode = null;
+              draggingLocation = null;
+              isDragging = false;
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+      }
+  };
+
+  canvas.onmousemove = function (e) {
+      if (isDragging) return;
+      var x = e.clientX - canvas.getBoundingClientRect().left;
+      var y = e.clientY - canvas.getBoundingClientRect().top;
+      var p = platform.getPickingPixel(x * platform.pixelRatio, y * platform.pixelRatio);
+      if (p) {
+          if (selectedNode != nodes[p[1]]) {
+              selectedNode = nodes[p[1]];
+              requestRender();
+          }
+      } else {
+          if (selectedNode != null) {
+              selectedNode = null;
+              requestRender();
+          }
+      }
+  }
+
+
+
+  function getVLinks() {
+    let vlinks = MT.getVisibleLinks(true);
+    let output = [];
+    let n = vlinks.length;
+    
+    for (let i = 0; i < n; i++) {
+      if (vlinks[i].origin) {
+        if (typeof vlinks[i].origin == 'object') {
+          vlinks[i].origin.forEach((o, j, l) => {
+            output.push(Object.assign({}, vlinks[i], {
+              origin: o,
+              oNum: j,
+              origins: l.length,
+              source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+              target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+            }));
+          });
+        } else {
+          output.push(Object.assign({}, vlinks[i], {
+            oNum: 0,
+            origins: 1,
+            source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+            target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+          }));
+        }
+      } else {
+        output.push(Object.assign({}, vlinks[i], {
+          origin: 'Unknown',
+          oNum: 0,
+          origins: 1,
+          source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+          target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+        }));
+      }
+    }
+    return output;
+  }
+
+ 
+  setTimeout(start, 1200);
+
+})();
+</script>

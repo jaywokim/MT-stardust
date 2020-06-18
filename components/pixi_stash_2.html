@@ -1,0 +1,450 @@
+<div id="pixi"></div>
+
+
+
+
+<script type="text/javascript">
+  (() => {
+
+    const SCREEN_WIDTH = $('#pixi').parent().width();
+    const SCREEN_HEIGHT = $('#pixi').parent().parent().parent().height();
+    const RESOLUTION = window.devicePixelRatio;
+    
+    let halfWidth = $('#pixi').parent().width() / 2;
+    let halfHeight = $('#pixi').parent().parent().parent().height() / 2;
+    let settings = session.style.widgets;
+
+    let clickedNodeData = undefined;
+   
+    let vlinks = undefined;
+
+    const graph = {
+      nodes: [],
+      links: []
+    };
+    let linkedByIndex = {};
+
+    const app = new PIXI.Application({
+      width: SCREEN_WIDTH,
+      height: SCREEN_HEIGHT,
+      resolution: RESOLUTION,
+      transparent: true,
+      antialias: true
+      // , autoStart: false // disable automatic rendering by ticker, render manually instead, only when needed
+    });
+   
+    document.getElementById('pixi').appendChild(app.view);
+
+
+    // create viewport
+    const viewport = new Viewport.Viewport({
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+        worldWidth: 1000,
+        worldHeight: 1000,
+
+        interaction: app.renderer.plugins.interaction // the interaction module is important for wheel to work properly when renderer.view is placed or scaled
+    })
+
+    // add the viewport to the stage
+    app.stage.addChild(viewport)
+
+    // activate plugins
+    viewport
+        .drag()
+        .pinch()
+        .wheel()
+        .decelerate()
+
+
+
+      const linksLayer = new PIXI.Graphics();
+      viewport.addChild(linksLayer);
+      const nodesLayer = new PIXI.Container();
+      viewport.addChild(nodesLayer);
+
+        
+    
+    let simulation = d3.forceSimulation()
+      .force('link', d3.forceLink()
+        .id(d => d._id)
+        .distance(l => l.origin.length * settings['link-length'])
+        .strength(0.125)
+      )
+      // .force('link', d3.forceLink().id((d) => d._id))
+      .force('charge', d3.forceManyBody()
+        .strength(-settings['node-charge'])
+      )
+      // .force('charge', d3.forceManyBody())
+      .force('gravity', d3.forceAttract()
+        .target([halfWidth, halfHeight])
+        .strength(settings['network-gravity'])
+      )
+      .force('center', d3.forceCenter(halfWidth, halfHeight));
+
+
+    let links = new PIXI.Graphics();
+    viewport.addChild(links);
+
+
+
+
+    let render = () => {
+      console.log('render')
+
+      const start = Date.now();
+      let newNodes = MT.getVisibleNodes(true);
+      let oldNodes = session.network.nodes;
+
+      newNodes.forEach((d, i) => {
+        let match = oldNodes.find(d2 => d2._id == d._id);
+        if (match) {
+          ['x', 'y', 'fx', 'fy', 'vx', 'vy', 'fixed'].forEach(v => {
+            if (typeof match[v] != "undefined") d[v] = match[v];
+          });
+        }
+      });
+
+      // parseInt(str.replace(/^#/, ''), 16)
+
+      session.network.nodes = newNodes;
+
+      
+      // stage.addChild(links);
+
+      let variable = settings['node-color-variable'];
+
+      let defaultSize = settings['node-radius'];
+      let size = defaultSize, med = defaultSize, oldrng, min, max;
+      console.log('size node', size);
+
+      // updateNodeColors();
+      newNodes.forEach((node) => {
+
+        node.gfx = new PIXI.Graphics();
+        node.gfx.lineStyle(1.5, 0xFFFFFF);
+        
+        if (variable == 'None') {
+          let fill = settings['node-color'];
+          // nodes.attr('fill', col).attr('opacity', 1);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), 1);
+        } else {
+          
+          let fill = temp.style.nodeColorMap(node[variable]);
+
+          console.log('fill', fill);
+          let alpha = temp.style.nodeAlphaMap(node[variable]);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), parseInt(alpha));
+        
+        }
+        // node.gfx.endFill();
+        // node.gfx.beginFill(parseInt(settings['node-color'].replace(/^#/, ''), 16));
+        node.gfx.drawCircle(0, 0, 5);
+
+        node.gfx.interactive = true;
+
+        node.gfx
+        // .on('pointerover', onMouseOver)
+        // .on('pointerout', onMouseOut)
+        // .on('pointerdown', onDragStart)
+        // .on('pointerup', onDragEnd)
+        // .on('pointerupoutside', onDragEnd)
+        // .on('pointermove', onDragMove);
+
+        // .on('mouseover', event => hoverNode(nodeGfxToNodeData.get(event.currentTarget)))
+        // .on('mouseout', event => unhoverNode(nodeGfxToNodeData.get(event.currentTarget)))
+        .on('mousedown', event => clickNode(event.currentTarget))
+        .on('mouseup', () => unclickNode())
+        .on('mouseupoutside', () => unclickNode())
+
+        viewport.addChild(node.gfx)
+        // stage.addChild(node.gfx);
+      });
+
+      
+      
+      vlinks = getVLinks();
+
+      // console.log('vlinks', vlinks);
+
+      // console.log('pixi',newNodes);
+
+      simulation
+        .nodes(newNodes)
+        .on('tick', function () {
+          newNodes.forEach((node) => {
+            let { x, y, gfx } = node;
+            gfx.position = new PIXI.Point(x, y);
+          });
+
+          links.clear();
+          links.alpha = 0.6;
+
+          vlinks.forEach((link) => {
+              let { source, target } = link;
+              links.lineStyle(2, parseInt('#D3D3D3'.replace(/^#/, ''), 16), 1);
+              links.moveTo(source.x, source.y);
+              links.lineTo(target.x, target.y);
+          });
+
+          links.endFill();
+         
+        });
+
+      simulation.force('link')
+        .links(vlinks);
+
+    }
+
+    const updatePositions = () => {
+      console.log('update positions')
+      links.clear();
+      links.alpha = 0.6;
+
+      vlinks.forEach((link) => {
+          let { source, target } = link;
+          links.lineStyle(2, parseInt('#D3D3D3'.replace(/^#/, ''), 16), 1);
+          links.moveTo(source.x, source.y);
+          links.lineTo(target.x, target.y);
+      });
+
+      links.endFill();
+
+      // for (const node of session.network.nodes) {
+      //   node.gfx.position = new PIXI.Point(node.x, node.y)
+      // }
+      
+      app.render();
+    };
+
+    const moveNode = (nodeData, point) => {
+      console.log('move node')
+      
+      nodeData.x = point.x;
+      nodeData.y = point.y;
+      
+      updatePositions();
+    };
+
+    const appMouseMove = event => {
+      console.log('appmouse move')
+      if (!clickedNodeData) {
+        return;
+      }
+      
+      moveNode(clickedNodeData, viewport.toWorld(event.data.global));
+    };
+
+    const clickNode = nodeData => {
+      console.log('clicknode', nodeData)
+      clickedNodeData = nodeData;
+      
+      // enable node dragging
+      app.renderer.plugins.interaction.on('mousemove', appMouseMove);
+      // disable viewport dragging
+      viewport.pause = true;
+    };
+    const unclickNode = () => {
+      console.log('unclicknode')
+      clickedNodeData = undefined;
+      
+      // disable node dragging
+      app.renderer.plugins.interaction.off('mousemove', appMouseMove);
+      // enable viewport dragging
+      viewport.pause = false;
+    };
+
+    function onMouseOver() {
+      this.isOver = true;
+      // this.texture = textureHover;
+    }
+
+    function onMouseOut() {
+      if (!this.dragging) {
+        this.isOver = false;
+        // this.texture = texture;
+      }
+    }
+
+    function onDragStart(event) {
+      // app.renderer.plugins.interaction.on('mousemove', appMouseMove);
+      // viewport.plugins.pause('drag')
+
+      // this.eventData = event.data;
+
+      // this.fx = this.x;
+      // this.fy = this.y;
+      // this.isDown = true;
+      // // globalDragging = true;
+      // simulation.alphaTarget(0.3).restart();
+    }
+
+    function onDragEnd(event) {
+      // simulation.alphaTarget(0);
+      // this.alpha = 1;
+      // if (this.dragging) {
+      //   this.dragging = false;
+      //   this.isDown = false;
+      //   this.isOver = false;
+      //   // this.texture = texture;
+      // }
+      // if (this.isDown && !this.dragging) {
+      //   this.isOver = true;
+      // }
+      // this.isDown = false;
+      // this.fx = null;
+      // this.fy = null;
+      // viewport.plugins.resume('drag')
+    }
+
+    function onDragMove(event) {
+      if (this.isDown) {
+        this.dragging = true;
+      }
+      if (this.dragging) {
+        const newPosition = this.eventData.getLocalPosition(this.parent);
+
+        console.log('new position', newPosition)
+        console.log('this', this)
+
+        this.x = newPosition.x;
+        this.y = newPosition.y;
+      }
+    }
+
+    function updateNodeColors() {
+      let variable = settings['node-color-variable'];
+      session.network.nodes.forEach((node) => {
+        node.gfx.clear();
+        if (variable == 'None') {
+            let fill = settings['node-color'];
+            // nodes.attr('fill', col).attr('opacity', 1);
+            node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), 1);
+        } else {
+          
+          let fill = temp.style.nodeColorMap(node[variable]);
+          let alpha = temp.style.nodeAlphaMap(node[variable]);
+          node.gfx.beginFill(parseInt(fill.replace(/^#/, ''), 16), parseInt(alpha));
+        
+        }
+        node.gfx.drawCircle(0, 0, 5);
+        renderer.render(stage);
+
+      });
+    }
+
+    // // add a red box
+    // const sprite = viewport.addChild(new PIXI.Sprite(PIXI.Texture.WHITE))
+    // sprite.tint = 0xff0000
+    // sprite.width = sprite.height = 100
+    // sprite.position.set(100, 100)
+
+
+    // const viewport = new Viewport.Viewport({
+    //   screenWidth: SCREEN_WIDTH,
+    //   screenHeight: SCREEN_HEIGHT,
+    //   worldWidth: width,
+    //   worldHeight: height,
+    //   interaction: app.renderer.plugins.interaction
+    // })
+
+    
+    // document.getElementById('pixi').appendChild(app.view);
+    // app.stage.addChild(viewport);
+
+    // const canvasSelection = d3.select(app.view);
+
+    // canvasSelection.on('mousemove', () => {
+    //   mouse = [d3.event.clientX, d3.event.clientY];
+    // });
+
+    // viewport.wheel().drag().decelerate();
+    // viewport.filterArea = app.renderer.screen;
+    
+    function getVLinks() {
+      let vlinks = MT.getVisibleLinks(true);
+      let output = [];
+      let n = vlinks.length;
+      let nodes = session.network.nodes;
+      for (let i = 0; i < n; i++) {
+        if (vlinks[i].origin) {
+          if (typeof vlinks[i].origin == 'object') {
+            vlinks[i].origin.forEach((o, j, l) => {
+              output.push(Object.assign({}, vlinks[i], {
+                origin: o,
+                oNum: j,
+                origins: l.length,
+                source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+                target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+              }));
+            });
+          } else {
+            output.push(Object.assign({}, vlinks[i], {
+              oNum: 0,
+              origins: 1,
+              source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+              target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+            }));
+          }
+        } else {
+          output.push(Object.assign({}, vlinks[i], {
+            origin: 'Unknown',
+            oNum: 0,
+            origins: 1,
+            source: nodes.find(d => d._id == vlinks[i].source || d.id == vlinks[i].source),
+            target: nodes.find(d => d._id == vlinks[i].target || d.id == vlinks[i].target)
+          }));
+        }
+      }
+      return output;
+    }
+
+
+
+
+    function runLayout (graph) {
+      return new Promise(resolve => {
+        const workerCode = `
+          // importScripts('https://unpkg.com/d3@5.14.2/dist/d3.min.js');
+          function runLayout(graph) {
+            const { nodes, links } = graph;
+            d3.forceSimulation(nodes)
+              .force('link', d3.forceLink(links).id(d => d.id))
+              .force('charge', d3.forceManyBody().strength(-250))
+              .force('center', d3.forceCenter())
+              .stop()
+              .tick(300);
+            const positions = Object.fromEntries(nodes.map(node => {
+              return [node.id, { x: node.x, y: node.y }];
+            }));
+            return positions;
+          }
+          self.onmessage = event => {
+            const graph = event.data;
+            const result = runLayout(graph);
+            self.postMessage(result);
+          }
+        `;
+        const workerBlob = new Blob([workerCode], {
+          type: 'application/javascript'
+        });
+        const workerUrl = URL.createObjectURL(workerBlob)
+        const worker = new Worker(workerUrl);
+
+        worker.onmessage = event => {
+          resolve(event.data);
+          worker.terminate();
+          URL.revokeObjectURL(workerUrl);                 
+        };
+        worker.postMessage(graph);
+      });
+    }
+
+    render();
+
+    $window
+      .on('node-color-change', updateNodeColors)
+      .on('link-color-change', render);
+
+  })();
+</script>

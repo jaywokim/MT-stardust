@@ -95,6 +95,8 @@
         <div class="col-7">
           <select id="default-view" class="form-control form-control-sm" title="Which view should MicrobeTrace render first, once it has successfully processed the data?">
             <option value="2d_network" selected>2D Network</option>
+            <option value="pixi">Pixi</option>
+            <option value="stardust">Stardust</option>
             <option value="3d_network">3D Network</option>
             <option value="bubbles">Bubbles</option>
             <option value="table">Table</option>
@@ -116,7 +118,7 @@
       <div class="form-group row" title="Would you like to generate a network based on random data?">
         <div class="col-4">Generate</div>
         <div class="col">
-          <input id="generate-number" type="number" class="form-control form-control-sm" min="1" max="2000" step="1" value="100">
+          <input id="generate-number" type="number" class="form-control form-control-sm" min="1" max="2000" step="1" value="10">
         </div>
         <div class="col">
           <button id="generate-sequences" class="btn btn-light btn-sm col">Sequences</button>
